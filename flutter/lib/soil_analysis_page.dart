@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_ai/firebase_ai.dart';
 import 'soil_chart_dialog.dart';
+import 'package:flutter/services.dart';
 
 class SoilAnalysisPage extends StatefulWidget {
   final String gardenId;
@@ -230,7 +231,7 @@ class _SoilAnalysisPageState extends State<SoilAnalysisPage> {
 
     try {
       final model = FirebaseAI.googleAI().generativeModel(
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-3.5-flash',
         systemInstruction: Content.system(_buildSoilContext()),
       );
 
@@ -914,14 +915,61 @@ class _SoilAnalysisPageState extends State<SoilAnalysisPage> {
           ],
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
               decoration: BoxDecoration(
                 color: isUser ? Colors.deepPurple : msg.isError ? Colors.red[50] : Colors.white,
-                borderRadius: BorderRadius.only(topLeft: const Radius.circular(14), topRight: const Radius.circular(14), bottomLeft: Radius.circular(isUser ? 14 : 4), bottomRight: Radius.circular(isUser ? 4 : 14)),
+                borderRadius: BorderRadius.only(
+                  topLeft: const Radius.circular(14), 
+                  topRight: const Radius.circular(14), 
+                  bottomLeft: Radius.circular(isUser ? 14 : 4), 
+                  bottomRight: Radius.circular(isUser ? 4 : 14)
+                ),
                 border: isUser ? null : Border.all(color: msg.isError ? Colors.red[200]! : Colors.grey[200]!),
                 boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
               ),
-              child: Text(msg.text, style: TextStyle(fontSize: 13, height: 1.5, color: isUser ? Colors.white : msg.isError ? Colors.red[700] : Colors.black87)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 1. เปลี่ยนเป็น SelectableText เพื่อให้ลากคลุมดำเลือกก็อปปี้บางคำเองได้
+                  SelectableText(
+                    msg.text, 
+                    style: TextStyle(
+                      fontSize: 13, 
+                      height: 1.5, 
+                      color: isUser ? Colors.white : msg.isError ? Colors.red[700] : Colors.black87
+                    ),
+                  ),
+                  // 2. ถ้าเป็นข้อความจาก AI และไม่ใช่ข้อความ Error ให้แสดงปุ่มลัดสำหรับกดก๊อปปี้ง่ายๆ
+                  if (!isUser && !msg.isError) ...[
+                    const Divider(height: 12, thickness: 0.5),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: InkWell(
+                        onTap: () async {
+                          await Clipboard.setData(ClipboardData(text: msg.text));
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("คัดลอกรายงานวิเคราะห์ดินเรียบร้อยแล้ว"),
+                                duration: Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.copy, size: 12, color: Colors.grey[500]),
+                            const SizedBox(width: 4),
+                            Text("คัดลอกทั้งหมด", style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ]
+                ],
+              ),
             ),
           ),
           if (isUser) const SizedBox(width: 6),
