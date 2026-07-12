@@ -112,10 +112,6 @@ class AckCallbacks : public BLECharacteristicCallbacks {
     if (value == "OK") {
       ackReceived = true;
       Serial.println("✅ Flutter บันทึกสำเร็จแล้ว! ล้างค่าเป็น 0");
-      lastN = 0;
-      lastP = 0;
-      lastK = 0;
-      lastMoist = 0;
 
       // ตั้งเป็น false ไว้ เพื่อบังคับให้รออ่านค่าจากเซนเซอร์รอบใหม่ก่อนถึงจะกดปุ่มส่งได้อีก
       hasValidData = false; 
@@ -190,7 +186,7 @@ void setup() {
   float start_v_in  = start_v_adc * (R1 + R2) / R2;
   float start_batt = constrain((start_v_in - 10.8) * 100.0 / (12.0 - 10.8), 0, 100);
 
-  if (start_batt < 10.0) {
+  if (start_batt < 9.75) {
     lcd.clear();
     lcd.setCursor(0, 0);
     lcd.print("Low Battery!");
@@ -281,6 +277,10 @@ void loop() {
     digitalWrite(BUZZER_PIN, LOW); // LOW = เสียงดัง
     delay(2500);
     digitalWrite(BUZZER_PIN, HIGH); // LOW = เสียงดัง
+    lastN = 0;
+    lastP = 0;
+    lastK = 0;
+    lastMoist = 0;
   }
 
   // ── ตรวจ FAIL จาก Flutter ──
@@ -429,7 +429,7 @@ void loop() {
       float mapped_value = constrain((voltage_in - 10.8) * 100.0 / (12.0 - 10.8), 0, 100);
 
       // ── ถ้าแบตตกต่ำกว่า 10% ระหว่างกำลังทำงานอยู่ ให้เข้าโหมด Sleep ทันที ──
-      if (mapped_value < 10.0 && currentMillis > 3000) {
+      if (mapped_value < 9.75 && currentMillis > 3000) {
         goToDeepSleep("Low Battery!", false);
       }
 

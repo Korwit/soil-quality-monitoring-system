@@ -51,8 +51,8 @@ class BLEService {
         orElse: () => throw Exception("ไม่พบ Service: $serviceUuid")
       );
       final char = await service.getCharacteristic(ackUuid.toLowerCase());
-      
-      await char.writeValueWithoutResponse(Uint8List.fromList(utf8.encode("OK")));
+      await char.writeValueWithResponse(Uint8List.fromList(utf8.encode("OK")));
+      //await char.writeValueWithoutResponse(Uint8List.fromList(utf8.encode("OK")));
     } catch (e) {
       debugPrint('[BLE Web] Write ACK Error: $e');
     }
