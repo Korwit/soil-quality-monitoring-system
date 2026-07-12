@@ -330,7 +330,9 @@ class _HomePageState extends State<HomePage> {
         _mapController.move(_currentPosition, 18.0);
       }
 
+      // ✅ เพิ่มตัวแปร ph เพื่อรองรับค่าที่มาจาก BLE
       int n = 0, p = 0, k = 0, moisture = 0;
+      double ph = 0.0;
       String source = "Manual";
       bool isStale = false;
 
@@ -342,6 +344,8 @@ class _HomePageState extends State<HomePage> {
             p = data['p'] ?? 0;
             k = data['k'] ?? 0;
             moisture = data['moisture'] ?? 0;
+            // ✅ อ่านค่า pH (หากใน service ไม่ได้ใช้ทศนิยม ส่งมาแค่ int ให้คูณหรือหารตามเหมาะสมใน BLEService)
+            ph = (data['ph'] ?? 0).toDouble(); 
             source = "Sensor (BLE)";
 
             if (data['isStale'] == 1) {
@@ -415,6 +419,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
+      // ✅ บันทึกค่า ph_value ลง Firestore ด้วย
       await FirebaseFirestore.instance
           .collection('gardens')
           .doc(widget.gardenId)
@@ -430,6 +435,7 @@ class _HomePageState extends State<HomePage> {
             'p_value': p,
             'k_value': k,
             'moisture': moisture,
+            'ph_value': ph, // <-- เพิ่มตรงนี้
             'source': source,
             'created_by_uid': currentUser?.uid,
             'created_by_email': currentUser?.email,
@@ -439,13 +445,14 @@ class _HomePageState extends State<HomePage> {
         Navigator.pop(context);
 
         if (source == "Sensor (BLE)") {
-          BLEService().markAsSaved(n, p, k, moisture);
+          // แจ้ง BLE ว่าบันทึกสำเร็จ (ถ้า ble_service.dart ยังรับพารามิเตอร์แค่นี้ ก็ไม่ต้องแก้ที่นี่)
+          BLEService().markAsSaved(n, p, k, moisture); 
           await BLEService().writeAck();
         }
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("บันทึกสำเร็จ! (N:$n P:$p K:$k)"),
+            content: Text("บันทึกสำเร็จ! (N:$n P:$p K:$k pH:$ph)"),
             backgroundColor: Colors.green,
           ),
         );
@@ -617,9 +624,10 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                   const SizedBox(height: 15),
+                  // ✅ แสดงค่า pH คู่กับความชื้น
                   Center(
                     child: Text(
-                      "ความชื้น: ${data['moisture']}%",
+                      "ความชื้น: ${data['moisture']}%   |   pH: ${data['ph_value'] ?? '-'}",
                       style: const TextStyle(fontSize: 16),
                     ),
                   ),
@@ -945,8 +953,9 @@ class _HomePageState extends State<HomePage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // ✅ โชว์ค่า pH ต่อท้ายความชื้น
                               Text(
-                                "N: ${data['n_value']} P: ${data['p_value']} K: ${data['k_value']}",
+                                "N: ${data['n_value']} P: ${data['p_value']} K: ${data['k_value']} pH: ${data['ph_value'] ?? '-'}",
                               ),
                               const SizedBox(height: 2),
                               Text(
@@ -985,7 +994,6 @@ class _HomePageState extends State<HomePage> {
         },
       ),
 
-      // ✅ เปลี่ยนลอจิก: จะแสดงปุ่มก็ต่อเมื่อ "เชื่อมต่อบลูทูธแล้ว" และ "ไม่ได้เปิดโหมดบันทึกอัตโนมัติอยู่"
       floatingActionButton: (_isBlueConnected && !_isAutoSaving)
           ? FloatingActionButton.extended(
               heroTag: "fab_save",
@@ -997,7 +1005,7 @@ class _HomePageState extends State<HomePage> {
               icon: const Icon(Icons.bluetooth_audio, color: Colors.white),
               backgroundColor: Colors.blue[700],
             )
-          : null, // ✅ ถ้ายังไม่เชื่อมต่อ หรือ เปิดโหมดออโต้เซฟอยู่ ให้ซ่อนปุ่มไปเลย // ✅ ถ้ายังไม่เชื่อมต่อ ให้ซ่อนปุ่มไปเลย
+          : null,
     );
   }
 }

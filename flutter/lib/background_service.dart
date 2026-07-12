@@ -82,7 +82,8 @@ void onStart(ServiceInstance service) async {
     final int p = event['p'] ?? 0;
     final int k = event['k'] ?? 0;
     final int moisture = event['moisture'] ?? 0;
-
+    final double ph = event['ph'] ?? 0.0; // ✅ ดึงค่า pH จาก Event (ตั้งค่าเริ่มต้นเป็น 0.0)
+  
     try {
       final prefs = await SharedPreferences.getInstance();
       final gardenId = prefs.getString('bg_garden_id');
@@ -118,6 +119,7 @@ void onStart(ServiceInstance service) async {
         'p_value':   p,
         'k_value':   k,
         'moisture':  moisture,
+        'ph_value':  ph, // ✅ บันทึกค่า pH ลง Firestore
         'source':    'Auto (BLE)',
         'created_by_uid': userUid,       // ✅ บันทึก UID ของพนักงาน
         'created_by_email': userEmail,   // ✅ บันทึก Email ของพนักงาน
@@ -134,8 +136,9 @@ void onStart(ServiceInstance service) async {
         if (await service.isForegroundService()) {
           service.setForegroundNotificationInfo(
             title: 'บันทึกสำเร็จ ✓',
+            
             content:
-                'N:$n P:$p K:$k | ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')} น.',
+                'N:$n P:$p K:$k pH:$ph | ${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')} น.',
           );
         }
       }
@@ -145,6 +148,7 @@ void onStart(ServiceInstance service) async {
         'latitude':  position.latitude,
         'longitude': position.longitude,
         'n': n, 'p': p, 'k': k,
+        'ph': ph, 
         'timestamp': DateTime.now().toIso8601String(),
       });
 

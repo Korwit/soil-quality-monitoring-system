@@ -40,7 +40,7 @@ unsigned long previousMillis = 0, relayMillis = 0;
 const byte read_all[] = { 0x01, 0x03, 0x00, 0x00, 0x00, 0x08, 0x44, 0x0C };
 byte values[25];
 
-uint8_t lastN = 0, lastP = 0, lastK = 0, lastMoist = 0;
+uint8_t lastN = 0, lastP = 0, lastK = 0, lastMoist = 0, lastPh = 0;
 bool hasValidData = false;
 
 volatile bool sleepBtnPressed = false;
@@ -50,7 +50,7 @@ volatile bool failReceived    = false;
 // ตัวแปรสำหรับจับเวลารอ ACK
 bool          waitingForAck   = false;
 unsigned long ackTimeoutMs    = 0;
-#define ACK_TIMEOUT 6000  // รอ 6 วินาที (ปรับตามโค้ดล่าสุดของคุณ)
+#define ACK_TIMEOUT 6000  // รอ 6 วินาที
 
 BLECharacteristic *pCharacteristic;
 bool deviceConnected = false;
@@ -65,7 +65,7 @@ const unsigned long SLEEP_TIMEOUT_DISCONNECT = 5 * 60 * 1000;  // 5 นาที
 const unsigned long SLEEP_TIMEOUT_CONNECT    = 10 * 60 * 1000; // 10 นาที 
 
 // ==========================================
-// ✅ ฟังก์ชันสำหรับ Buzzer (Active Low)
+// ฟังก์ชันสำหรับ Buzzer (Active Low)
 // ==========================================
 void beepBuzzer() {
   digitalWrite(BUZZER_PIN, LOW); // LOW = เสียงดัง
@@ -103,9 +103,6 @@ void goToDeepSleep(String msg, bool waitForButtonRelease) {
 // ==========================================
 // ACK Callbacks
 // ==========================================
-// ==========================================
-// ACK Callbacks
-// ==========================================
 class AckCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic *pChar) {
     String value = pChar->getValue().c_str();
@@ -113,13 +110,12 @@ class AckCallbacks : public BLECharacteristicCallbacks {
       ackReceived = true;
       Serial.println("✅ Flutter บันทึกสำเร็จแล้ว! ล้างค่าเป็น 0");
 
-      // ตั้งเป็น false ไว้ เพื่อบังคับให้รออ่านค่าจากเซนเซอร์รอบใหม่ก่อนถึงจะกดปุ่มส่งได้อีก
       hasValidData = false; 
 
-      // อัปเดต Characteristic เป็น 0 และ Notify แจ้งแอปมือถือ
+      // ✅ ขยายอาเรย์ส่งค่าเคลียร์เป็น 5 ไบต์ (เพิ่มของ pH)
       if (pCharacteristic != nullptr) {
-        uint8_t zeroData[4] = {0, 0, 0, 0};
-        pCharacteristic->setValue(zeroData, 4);
+        uint8_t zeroData[5] = {0, 0, 0, 0, 0};
+        pCharacteristic->setValue(zeroData, 5);
         pCharacteristic->notify();
       }
 
@@ -163,11 +159,9 @@ void setup() {
   gpio_hold_dis(GPIO_NUM_13);
   gpio_deep_sleep_hold_dis();
 
-  // ตั้งค่า Buzzer เป็น Active Low (เริ่มต้นต้องเป็น HIGH เพื่อปิดเสียง)
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, HIGH);
 
-  // ── ✅ เพิ่มเสียงเตือนตอนเปิดเครื่อง/กดปลุกตื่น ──
   beepBuzzer(); 
   delay(100); 
   beepBuzzer();
@@ -180,10 +174,9 @@ void setup() {
   
   pinMode(SLEEP_BTN_PIN, INPUT_PULLUP);
   
-  // ── ตรวจสอบแบตเตอรี่ทันทีที่ตื่น/เปิดเครื่อง ──
   int start_adc = analogRead(ANALOG_IN_PIN);
   float start_v_adc = ((float)start_adc * REF_VOLTAGE) / ADC_RESOLUTION;
-  float start_v_in  = start_v_adc * (R1 + R2) / R2;
+  float start_v_in  = 0.5 + start_v_adc * (R1 + R2) / R2;
   float start_batt = constrain((start_v_in - 10.8) * 100.0 / (12.0 - 10.8), 0, 100);
 
   if (start_batt < 9.75) {
@@ -195,11 +188,8 @@ void setup() {
     lcd.setCursor(0, 2);
     lcd.print("Please charge...");
     
-    // รอให้ผู้ใช้ปล่อยปุ่ม (ถ้าเขากดค้างไว้ตอนปลุก) เพื่อไม่ให้ลูปตื่นรัวๆ
     while (digitalRead(SLEEP_BTN_PIN) == LOW) delay(10); 
     delay(2000); 
-    
-    // สั่งกลับไปหลับทันที
     goToDeepSleep("Sleep (Low Batt)", false); 
   }
 
@@ -243,7 +233,7 @@ void setup() {
   BLEDevice::startAdvertising();
 
   lastActivityMillis = millis(); 
-  Serial.println("📡 BLE พร้อมแล้ว! กดปุ่มขา 33 เพื่อส่งค่า NPK");
+  Serial.println("📡 BLE พร้อมแล้ว! กดปุ่มขา 33 เพื่อส่งค่า NPK และ pH");
 }
 
 // ==========================================
@@ -254,7 +244,6 @@ void loop() {
 
   // ── ตรวจสอบระบบ Auto Deep Sleep ──
   unsigned long timeThreshold = deviceConnected ? SLEEP_TIMEOUT_CONNECT : SLEEP_TIMEOUT_DISCONNECT;
-  
   if (currentMillis - lastActivityMillis >= timeThreshold) {
     goToDeepSleep("Auto Sleep...", false); 
   }
@@ -270,17 +259,19 @@ void loop() {
     lcd.print("N:"); lcd.print(lastN);
     lcd.print(" P:"); lcd.print(lastP);
     lcd.print(" K:"); lcd.print(lastK);
+    // ✅ แสดง pH บนจอ
     lcd.setCursor(0, 2);
-    lcd.print("Moisture: "); lcd.print(lastMoist); lcd.print("%");
+    lcd.print("M:"); lcd.print(lastMoist); lcd.print("% pH:"); lcd.print(lastPh / 10.0, 1);
     lcd.setCursor(0, 3);
     lcd.print("GPS + Firebase OK");
-    digitalWrite(BUZZER_PIN, LOW); // LOW = เสียงดัง
+    digitalWrite(BUZZER_PIN, LOW);
     delay(2500);
-    digitalWrite(BUZZER_PIN, HIGH); // LOW = เสียงดัง
+    digitalWrite(BUZZER_PIN, HIGH);
     lastN = 0;
     lastP = 0;
     lastK = 0;
     lastMoist = 0;
+    lastPh = 0; // ✅ ล้างค่า pH
   }
 
   // ── ตรวจ FAIL จาก Flutter ──
@@ -317,7 +308,7 @@ void loop() {
     }
   }
 
-  // ── ปุ่มส่งค่า NPK (ขา 33) ──
+  // ── ปุ่มส่งค่า NPK และ pH (ขา 33) ──
   if (digitalRead(SEND_BTN_PIN) == LOW) {
     delay(50);
     if (digitalRead(SEND_BTN_PIN) == LOW) {
@@ -348,12 +339,13 @@ void loop() {
         delay(200); beepBuzzer(); delay(100); beepBuzzer();
         delay(1500);
       } else {
-        uint8_t dataToSend[4] = { lastN, lastP, lastK, lastMoist };
-        pCharacteristic->setValue(dataToSend, 4);
+        // ✅ สร้าง Array 5 ช่อง ส่ง N, P, K, Moist และ pH
+        uint8_t dataToSend[5] = { lastN, lastP, lastK, lastMoist, lastPh };
+        pCharacteristic->setValue(dataToSend, 5); // ส่ง 5 ไบต์
         pCharacteristic->notify();
         delay(100);
 
-        Serial.printf("📤 ส่งค่า BLE: N:%d P:%d K:%d Moist:%d\n", lastN, lastP, lastK, lastMoist);
+        Serial.printf("📤 ส่งค่า BLE: N:%d P:%d K:%d Moist:%d pH:%.1f\n", lastN, lastP, lastK, lastMoist, lastPh / 10.0);
 
         waitingForAck = true;
         ackTimeoutMs  = millis();
@@ -366,7 +358,8 @@ void loop() {
         lcd.print(" P:"); lcd.print(lastP);
         lcd.print(" K:"); lcd.print(lastK);
         lcd.setCursor(0, 2);
-        lcd.print("Moisture: "); lcd.print(lastMoist); lcd.print("%");
+       
+        lcd.print("M:"); lcd.print(lastMoist); lcd.print("% pH:"); lcd.print(lastPh / 10.0, 1);
         lcd.setCursor(0, 3);
         lcd.print("Waiting response..");
       }
@@ -409,6 +402,10 @@ void loop() {
       lastP     = (uint8_t)constrain(p, 0, 255);
       lastK     = (uint8_t)constrain(k, 0, 255);
       lastMoist = (uint8_t)constrain((int)humid, 0, 255);
+      
+      // ✅ แปลง pH เป็นจำนวนเต็ม (คูณ 10) เพื่อให้ส่งผ่าน byte เดียวได้ 
+      // เช่น 6.5 จะเก็บเป็น 65
+      lastPh    = (uint8_t)constrain((int)(ph * 10), 0, 140); 
       hasValidData = true;
 
       Serial.printf("N:%d P:%d K:%d Temp:%.1f Humid:%.1f EC:%d pH:%.2f\n", n, p, k, temp, humid, ec, ph);
@@ -420,12 +417,14 @@ void loop() {
       lcd.print(" K:"); lcd.print(k);
 
       lcd.setCursor(0, 1);
-      lcd.print("Temp:"); lcd.print(temp, 1); lcd.print("C");
+      // ✅ แสดงผลบรรทัดที่ 2 ปรับตัวหนังสือให้ย่อลง เพื่อให้โชว์ pH ได้พอดีจอ (T=Temp, H=Humid)
+      lcd.print("T:"); lcd.print(temp, 1); lcd.print("C");
       lcd.print(" H:"); lcd.print(humid, 0); lcd.print("%");
+      lcd.print(" pH:"); lcd.print(ph, 1);
 
       int adc_value = analogRead(ANALOG_IN_PIN);
       float voltage_adc = ((float)adc_value * REF_VOLTAGE) / ADC_RESOLUTION;
-      float voltage_in  = voltage_adc * (R1 + R2) / R2;
+      float voltage_in  = 0.5 + voltage_adc * (R1 + R2) / R2;
       float mapped_value = constrain((voltage_in - 10.8) * 100.0 / (12.0 - 10.8), 0, 100);
 
       // ── ถ้าแบตตกต่ำกว่า 10% ระหว่างกำลังทำงานอยู่ ให้เข้าโหมด Sleep ทันที ──

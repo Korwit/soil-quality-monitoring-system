@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'tree_trend_analysis_page.dart';
 import 'package:csv/csv.dart';
 
 // ✅ นำเข้าไฟล์ Export แบบแยกแพลตฟอร์ม
@@ -323,6 +324,72 @@ class InspectionDatesPage extends StatelessWidget {
     );
   }
 
+  // ฟังก์ชันแสดง Popup เลือกรอบการตรวจเพื่อวิเคราะห์
+  void _showMultiRoundAnalysisDialog(BuildContext parentContext, List<QueryDocumentSnapshot> allDocs) {
+    Set<String> selectedIds = {};
+
+    showDialog(
+      context: parentContext,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (builderContext, setStateDialog) {
+            return AlertDialog(
+              title: const Text("เลือกรอบตรวจเพื่อเปรียบเทียบ"),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: Column(
+                  children: [
+                    const Text("เลือกอย่างน้อย 2 รอบเพื่อดูแนวโน้มรายต้น", style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    const Divider(),
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: allDocs.length,
+                        itemBuilder: (ctx, index) {
+                          var doc = allDocs[index];
+                          bool isChecked = selectedIds.contains(doc.id);
+                          return CheckboxListTile(
+                            title: Text("รอบ: ${doc['display_date']}"),
+                            value: isChecked,
+                            activeColor: Colors.deepPurple,
+                            onChanged: (bool? val) {
+                              setStateDialog(() {
+                                if (val == true) selectedIds.add(doc.id);
+                                else selectedIds.remove(doc.id);
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text("ยกเลิก")),
+                ElevatedButton(
+                  onPressed: selectedIds.length < 2 ? null : () {
+                    Navigator.pop(dialogContext);
+                    // ส่งข้อมูลไปยังหน้าวิเคราะห์รายต้น
+                    Navigator.push(parentContext, MaterialPageRoute(
+                      builder: (context) => TreeTrendAnalysisPage(
+                        gardenId: gardenId,
+                        gardenName: gardenName,
+                        selectedRoundIds: selectedIds.toList(),
+                      )
+                    ));
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.deepPurple, foregroundColor: Colors.white),
+                  child: Text("เริ่มวิเคราะห์ (${selectedIds.length})"),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _deleteInspectionDate(BuildContext context, String dateId) {
     showDialog(
       context: context,
@@ -353,6 +420,26 @@ class InspectionDatesPage extends StatelessWidget {
         title: Text("รอบการตรวจ: $gardenName"),
         backgroundColor: Colors.green[700],
         actions: [
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('gardens').doc(gardenId)
+                .collection('inspections')
+                .orderBy('created_at', descending: true)
+                .snapshots(),
+            builder: (context, snapshot) {
+              return IconButton(
+                icon: const Icon(Icons.analytics_outlined),
+                tooltip: "วิเคราะห์เปรียบเทียบรอบตรวจ",
+                onPressed: () {
+                  if (snapshot.hasData && snapshot.data!.docs.isNotEmpty) {
+                    _showMultiRoundAnalysisDialog(context, snapshot.data!.docs);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("ไม่มีรอบการตรวจให้วิเคราะห์")));
+                  }
+                },
+              );
+            }
+          ),
           PopupMenuButton<String>(
             onSelected: (value) => _handleExportAction(context, value),
             itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
