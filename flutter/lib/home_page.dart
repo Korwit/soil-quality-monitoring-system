@@ -315,7 +315,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Future<void> _addNewPoint() async {
+Future<void> _addNewPoint() async {
     _showLoadingDialog(context);
 
     try {
@@ -330,7 +330,6 @@ class _HomePageState extends State<HomePage> {
         _mapController.move(_currentPosition, 18.0);
       }
 
-      // ✅ เพิ่มตัวแปร ph เพื่อรองรับค่าที่มาจาก BLE
       int n = 0, p = 0, k = 0, moisture = 0;
       double ph = 0.0;
       String source = "Manual";
@@ -344,7 +343,6 @@ class _HomePageState extends State<HomePage> {
             p = data['p'] ?? 0;
             k = data['k'] ?? 0;
             moisture = data['moisture'] ?? 0;
-            // ✅ อ่านค่า pH (หากใน service ไม่ได้ใช้ทศนิยม ส่งมาแค่ int ให้คูณหรือหารตามเหมาะสมใน BLEService)
             ph = (data['ph'] ?? 0).toDouble(); 
             source = "Sensor (BLE)";
 
@@ -419,8 +417,9 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      // ✅ บันทึกค่า ph_value ลง Firestore ด้วย
-      await FirebaseFirestore.instance
+      // --- [แก้ไข] นำ await ออก (Fire and Forget) ---
+      // เก็บข้อมูลลง Cache ในเครื่อง แล้วระบบจะคอยจัดการซิงค์เองทีหลังเมื่อมีเน็ต
+      FirebaseFirestore.instance
           .collection('gardens')
           .doc(widget.gardenId)
           .collection('inspections')
@@ -430,30 +429,34 @@ class _HomePageState extends State<HomePage> {
             'latitude': position.latitude,
             'longitude': position.longitude,
             'altitude': altitude,
-            'timestamp': FieldValue.serverTimestamp(),
+            //'timestamp': FieldValue.serverTimestamp(),
+            'timestamp': Timestamp.fromDate(DateTime.now()),
             'n_value': n,
             'p_value': p,
             'k_value': k,
             'moisture': moisture,
-            'ph_value': ph, // <-- เพิ่มตรงนี้
+            'ph_value': ph, 
             'source': source,
             'created_by_uid': currentUser?.uid,
             'created_by_email': currentUser?.email,
           });
+      // ------------------------------------------
 
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context); // ปิด Loading Dialog ได้เลย ไม่ต้องรอเน็ต
 
         if (source == "Sensor (BLE)") {
-          // แจ้ง BLE ว่าบันทึกสำเร็จ (ถ้า ble_service.dart ยังรับพารามิเตอร์แค่นี้ ก็ไม่ต้องแก้ที่นี่)
           BLEService().markAsSaved(n, p, k, moisture); 
+          // สั่งเขียนเคลียร์ค่าไปที่อุปกรณ์ BLE (ทำงานได้แม้ไม่มีเน็ต)
           await BLEService().writeAck();
         }
 
+        // แจ้งผู้ใช้ว่าบันทึกลงคิวเรียบร้อย
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("บันทึกสำเร็จ! (N:$n P:$p K:$k pH:$ph)"),
+            content: Text("บันทึกสำเร็จ (ซิงค์อัตโนมัติเมื่อมีเน็ต) N:$n P:$p K:$k"),
             backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
           ),
         );
       }

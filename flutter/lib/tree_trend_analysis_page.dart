@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:firebase_ai/firebase_ai.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 class TreeTrendAnalysisPage extends StatefulWidget {
   final String gardenId;
@@ -22,6 +24,10 @@ class TreeTrendAnalysisPage extends StatefulWidget {
 class _TreeTrendAnalysisPageState extends State<TreeTrendAnalysisPage> {
   bool _isLoading = true;
   List<TreeCluster> _treeClusters = [];
+
+  // ตัวแปรสำหรับควบคุมแผนที่
+  final MapController _mapController = MapController();
+  bool _mapExpanded = true; 
 
   // ตัวแปรควบคุมการพับหน้าจอ (UI State)
   bool _isSettingsExpanded = true; 
@@ -129,6 +135,15 @@ class _TreeTrendAnalysisPageState extends State<TreeTrendAnalysisPage> {
           _treeClusters = clusters;
           _isLoading = false;
         });
+
+        // พอโหลดข้อมูลเสร็จ เลื่อนแผนที่ไปที่ต้นไม้ต้นแรก (ถ้ามี)
+        if (clusters.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            try { 
+              _mapController.move(LatLng(clusters.first.centerLat, clusters.first.centerLng), 17.0); 
+            } catch (_) {}
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -235,6 +250,10 @@ $treesData
               children: [
                 _buildExpectedNPKInputs(),
                 
+                // ถ้าย่อแชท AI ไว้ และมีข้อมูลต้นไม้ ให้แสดงแผนที่
+                if (!_aiExpanded && _treeClusters.isNotEmpty)
+                  _buildMapSection(),
+
                 // ใช้ Expanded ครอบทั้งรายการต้นไม้และ AI
                 Expanded(
                   child: Column(
@@ -258,6 +277,93 @@ $treesData
                 ),
               ],
             ),
+    );
+  }
+
+  // ==========================================
+  // วิดเจ็ต: แผนที่ (ใหม่)
+  // ==========================================
+  Widget _buildMapSection() {
+    return Column(
+      children: [
+        InkWell(
+          onTap: () => setState(() => _mapExpanded = !_mapExpanded),
+          child: Container(
+            color: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.map, color: Colors.deepPurple, size: 18),
+                const SizedBox(width: 8),
+                const Text("แผนที่ตำแหน่งต้นไม้", style: TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                Icon(_mapExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.deepPurple),
+              ],
+            ),
+          ),
+        ),
+        AnimatedCrossFade(
+          firstChild: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.30, 
+            child: _buildMap(),
+          ),
+          secondChild: const SizedBox.shrink(),
+          crossFadeState: _mapExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+          duration: const Duration(milliseconds: 250),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMap() {
+    List<Marker> markers = [];
+    
+    // สร้าง Marker ให้แต่ละต้นไม้
+    for (var tree in _treeClusters) {
+      bool hasHistory = tree.history.length > 1; // เช็คว่ามีประวัติหลายรอบไหม
+      
+      markers.add(
+        Marker(
+          point: LatLng(tree.centerLat, tree.centerLng),
+          width: 45,
+          height: 45,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: hasHistory ? Colors.deepPurple.withOpacity(0.85) : Colors.grey.withOpacity(0.85),
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2))
+              ]
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              tree.treeId, // "T1", "T2" ฯลฯ
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // จุดศูนย์กลางเริ่มต้น (กันเหนียวเผื่อบัค MapController)
+    LatLng center = _treeClusters.isNotEmpty 
+        ? LatLng(_treeClusters.first.centerLat, _treeClusters.first.centerLng) 
+        : const LatLng(13.7563, 100.5018);
+
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: center, 
+        initialZoom: 17.0,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', 
+          userAgentPackageName: 'com.example.soil_app'
+        ),
+        MarkerLayer(markers: markers),
+      ],
     );
   }
 
@@ -353,7 +459,13 @@ $treesData
         subtitle: Text("พิกัด: ${tree.centerLat.toStringAsFixed(5)}, ${tree.centerLng.toStringAsFixed(5)} (${tree.history.length} รอบ)"),
         leading: CircleAvatar(
           backgroundColor: hasHistory ? Colors.deepPurple[100] : Colors.grey[200],
-          child: Icon(Icons.park, color: hasHistory ? Colors.deepPurple : Colors.grey),
+          child: Text(
+            tree.treeId, // ใส่ชื่อต้นไม้ T1, T2 ไว้ในไอคอนด้วย
+            style: TextStyle(
+              color: hasHistory ? Colors.deepPurple : Colors.grey[700], 
+              fontWeight: FontWeight.bold, fontSize: 12
+            ),
+          ),
         ),
         initiallyExpanded: hasHistory,
         children: tree.history.map((point) {
@@ -387,9 +499,10 @@ $treesData
       onTap: () {
         setState(() {
           _aiExpanded = !_aiExpanded;
-          // ความฉลาด: ถ้าเปิดหน้าต่าง AI ให้พับส่วนตั้งค่า NPK ด้านบนเก็บอัตโนมัติด้วย
+          // ความฉลาด: ถ้าเปิดหน้าต่าง AI ให้พับส่วนตั้งค่า NPK และแผนที่ ด้านบนเก็บอัตโนมัติด้วย
           if (_aiExpanded) {
             _isSettingsExpanded = false;
+            _mapExpanded = false;
           }
         });
       },

@@ -309,9 +309,15 @@ class InspectionDatesPage extends StatelessWidget {
 
                     if (context.mounted) {
                       Navigator.pop(context); 
-                      if (docId == null) {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => HomePage(gardenId: gardenId, inspectionDateId: targetId, userRole: userRole)));
-                      }
+                     // แก้ไขตรงบรรทัดนี้
+                    if (docId == null) {
+                      data['created_at'] = Timestamp.fromDate(DateTime.now());
+                    }
+                    
+                    await FirebaseFirestore.instance
+                        .collection('gardens').doc(gardenId)
+                        .collection('inspections').doc(targetId)
+                        .set(data, SetOptions(merge: true));
                     }
                   },
                   child: Text(docId == null ? "สร้าง" : "บันทึก"),

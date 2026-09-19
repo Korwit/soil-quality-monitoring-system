@@ -211,6 +211,31 @@ class _SoilAnalysisPageState extends State<SoilAnalysisPage> {
     }
   }
 
+  // ✅ ฟังก์ชันใหม่ แจ้งเตือนก่อนลบแชท
+  Future<void> _confirmStartNewChat() async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("แน่ใจหรือไม่?"),
+        content: const Text("ต้องการเริ่มแชทใหม่ใช่หรือไม่ ประวัติการคุยกับ AI ในรอบนี้จะถูกล้างออก"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("ยกเลิก"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _startNewChat(); // เรียกใช้การล้างแชทเดิม
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text("เริ่มใหม่", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _startNewChat() async {
     setState(() {
       _chatMessages.clear();
@@ -826,7 +851,7 @@ class _SoilAnalysisPageState extends State<SoilAnalysisPage> {
                 Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.deepPurple.withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: const Text("Gemini", style: TextStyle(fontSize: 10, color: Colors.deepPurple, fontWeight: FontWeight.bold))),
                 const SizedBox(width: 8),
                 TextButton.icon(
-                  onPressed: _startNewChat, 
+                  onPressed: _confirmStartNewChat, // เปลี่ยนเป็นตัวที่มี Popup ยืนยัน
                   icon: const Icon(Icons.refresh, size: 14), 
                   label: const Text("เริ่มใหม่", style: TextStyle(fontSize: 12)),
                   style: TextButton.styleFrom(foregroundColor: Colors.deepPurple, visualDensity: VisualDensity.compact),
